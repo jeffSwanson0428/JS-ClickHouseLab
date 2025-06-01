@@ -1,0 +1,71 @@
+apiVersion: "clickhouse.altinity.com/v1"
+kind: "ClickHouseInstallation"
+metadata:
+  name: altinity-demo
+  namespace: clickhouse-lab
+spec:
+  templates:
+    podTemplates:
+      - name: clickhouse-pod-template
+        spec:
+          containers:
+            - name: clickhouse
+              image: altinity/clickhouse-server:latest
+              ports:
+                - name: http
+                  containerPort: 8123
+                - name: native
+                  containerPort: 9000
+                - name: interserver
+                  containerPort: 9009
+              volumeMounts:
+                - name: clickhouse-storage
+                  mountPath: /var/lib/clickhouse
+            - name: metrics-exporter
+              image: altinity/metrics-exporter:latest
+              ports:
+                - name: metrics
+                  containerPort: 8888
+    volumeClaimTemplates:
+      - name: clickhouse-storage
+        spec:
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 2Gi
+          storageClassName: standard
+    serviceTemplates:
+      - name: clickhouse-service
+        generateName: "chi-"
+        spec:
+          ports:
+            - name: http
+              port: 8123
+            - name: native
+              port: 9000
+            - name: interserver
+              port: 9009
+          type: ClusterIP
+      - name: clickhouse-metrics-service
+        generateName: "clickhouse-metrics"
+        spec:
+          type: ClusterIP
+          ports:
+            - name: metrics
+              port: 8888
+  configuration:     
+    clusters:
+      - name: cluster-1
+        layout:
+          shardsCount: 2
+          replicasCount: 2
+        templates:
+          podTemplate: clickhouse-pod-template
+          volumeClaimTemplate: clickhouse-storage
+          serviceTemplate: clickhouse-service
+          serviceTemplates: 
+            - clickhouse-metrics-service
+    zookeeper:
+      nodes:
+        - host: keeper-clickhouse-keeper.clickhouse-lab.svc.cluster.local
+          port: 2181
