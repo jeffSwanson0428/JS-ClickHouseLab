@@ -1,0 +1,42 @@
+apiVersion: "clickhouse-keeper.altinity.com/v1"
+kind: "ClickHouseKeeperInstallation"
+metadata:
+  name: clickhouse-keeper
+  namespace: clickhouse-lab
+spec:
+  configuration:
+    clusters:
+      - name: "chk01"
+        layout:
+          replicasCount: 3
+  defaults:
+    templates:
+      podTemplate: default
+      dataVolumeClaimTemplate: default
+  templates:
+    podTemplates:
+      - name: default
+        metadata:
+          labels:
+            app: clickhouse-keeper
+          containers:
+            - name: clickhouse-keeper
+              imagePullPolicy: IfNotPresent
+              image: "clickhouse/clickhouse-keeper:latest"
+              resources:
+                requests:
+                  memory: "256M"
+                  cpu: "1"
+                limits:
+                  memory: "2Gi"
+                  cpu: "2"
+          securityContext:
+            fsGroup: 101
+    volumeClaimTemplates:
+      - name: default
+        spec:
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: 2Gi
