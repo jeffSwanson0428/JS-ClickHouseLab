@@ -10,7 +10,7 @@ if ! command -v envsubst &> /dev/null; then
 fi
 
 echo "Creating namespaces:"
-kubectl create namespace "$OPERATOR_NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
+kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
 kubectl create namespace "prometheus" --dry-run=client -o yaml | kubectl apply -f -
 
 echo "Creating Altinity Clickhouse Operator"

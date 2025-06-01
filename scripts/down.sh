@@ -35,4 +35,4 @@ delete_template_if_exists "$LAB_ROOT/manifests/operator/clickhouse-operator.yaml
 
 echo "Deleting namespaces:"
 delete_namespace_if_exists "prometheus"
-delete_namespace_if_exists "$OPERATOR_NAMESPACE"
+delete_namespace_if_exists "$NAMESPACE"
