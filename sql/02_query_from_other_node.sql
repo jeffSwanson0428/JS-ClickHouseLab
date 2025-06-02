@@ -1,1 +1,2 @@
-SELECT * FROM test_replication LIMIT 3;"
+SELECT * 
+FROM test_replication;
