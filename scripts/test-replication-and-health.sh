@@ -61,30 +61,25 @@ for pod in "${keeper_pods[@]}"; do
   printf '%s: %s\n' "$pod" "$status"
 done
 
+
 # Show Clickhouse Keeper State, indicating the nodes have registered with Keeper.
-keeper_pod=${keeper_pods[0]}
-replica_path="/clickhouse/tables/cluster-1/events/replicas"
-keeper_nodes_cmd="echo \"ls \\\"$replica_path\\\";\" | clickhouse-keeper-client --host 127.0.0.1 --port 2181 2>/dev/null"
-
-# Command to be executed on keeper container to extract replica node names. Send string result to read to stip whitespace and store in $nodes as an array.
-read -r -a nodes <<< "$(kubectl exec -n "$NAMESPACE" "$keeper_pod" -c $CLICKHOUSE_KEEPER_CONTAINER -- sh -c "$keeper_nodes_cmd")"
-echo -e "\n### Checking is_active for each replica on Clickhouse-Keeper###"
-# For each node, validate is_active is not null, indicating the znode was created when the node registered with keeper for replication.
-for node in "${nodes[@]}"; do
-  echo "#  Validating $node is active #"
-
-  keeper_active_cmd="echo \"get \\\"$replica_path/$node/is_active\\\";\" | clickhouse-keeper-client --host 127.0.0.1 --port 2181 2>/dev/null"
-  uuid=$(
-    kubectl exec -n "$NAMESPACE" "$keeper_pod" -c $CLICKHOUSE_KEEPER_CONTAINER -- \
-      sh -c "$keeper_active_cmd"
-  )
-
-  printf '%s: %s\n' "$node" "${uuid:-(not active)}"
+# TODO: programmatically retrieve replicas. "ls  "/clickhouse/tables/cluster-1/events/replicas/"" in clickhouse-keeper-client lists them, 
+#       but returns them with strange whitespace characters causing unexpected behavior.
+replicas=("chi-altinity-demo-cluster-1-0-0" "chi-altinity-demo-cluster-1-0-1" "chi-altinity-demo-cluster-1-1-0" "chi-altinity-demo-cluster-1-1-1")
+pod_name=${keeper_pods[1]}
+echo -e "\n### Checking is_active for each replica on Clickhouse-Keeper ###"
+# For each replica, validate is_active is not null, indicating the znode was created when the node registered with keeper for replication.
+for r in "${replicas[@]}"; do
+    echo "#  Validating $r is active #"
+    kubectl exec -n "$NAMESPACE" "$pod_name" -c "$CLICKHOUSE_KEEPER_CONTAINER" -- \
+    sh -c "echo \"get \\\"/clickhouse/tables/cluster-1/events/replicas/$r/is_active\\\";\" \
+      | clickhouse-keeper-client --host 127.0.0.1 --port 2181 2>/dev/null"
 done
 
 # Query system.replicas to show each node contains the same replication metadata about default.test_replication and correctly connected with clickhouse-keeper
-echo -e '\n### Querying system.replicas ###'
+echo -e '\n### Querying system.replicas for replication metadata ###'
 cat "$LAB_ROOT/sql/04_query_system-replicas.sql"
 kubectl exec -n "$NAMESPACE" -c "$CLICKHOUSE_CHI_CONTAINER" -i "${chi_pods[0]}" -- \
     clickhouse-client --user="$CLICKHOUSE_USER" --port="$CLICKHOUSE_PORT" \
-    --multiquery < "$LAB_ROOT/sql/04_query_system-replicas.sql"
+    --multiquery < "$LAB_ROOT/sql/04_query_system-replicas.sql" \
+    | column -t -s $'\t'

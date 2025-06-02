@@ -3,14 +3,10 @@ SELECT
     database,
     table,
     engine,
-    is_leader,
-    can_become_leader,
-    zookeeper_name,
-    zookeeper_path,
+    zookeeper_name AS keeper_name,
     replica_name,
     replica_path,
     total_replicas,
-    active_replicas,
     replica_is_active
 FROM clusterAllReplicas('cluster-1', 'system', 'replicas')
 WHERE database = 'default'
