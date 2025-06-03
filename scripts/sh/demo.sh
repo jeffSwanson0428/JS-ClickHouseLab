@@ -105,6 +105,28 @@ done
 
 echo -e "\n"
 echo "#########################################"
+echo "### Simulate insertion during outage? ###"
+echo "#########################################"
+while true; do
+  read -r -p "### Proceed with simulation? [y/n]: " answer
+  case "$answer" in
+    [Yy]) 
+      echo "### Beginning simulation..."
+      bash "$LAB_ROOT/scripts/sh/failure_simulation.sh"
+      break
+      ;;
+    [Nn])
+      echo -e "### Skipping. ###\n"
+      break
+      ;;
+    *)
+      echo "### Please enter y or n. ###"
+      ;;
+  esac
+done
+
+echo -e "\n"
+echo "#########################################"
 echo "###      The demo has concluded.      ###"
 echo "###      Thank you for viewing!       ###"
 echo "#########################################"

@@ -6,10 +6,10 @@ source "$script_dir/env.sh"
 echo -e "\n### Retrieving a CHI pod from each replica ###"
 chi_pods=(
     $( kubectl get pods \
-     -n "$NAMESPACE" \
-     -l "clickhouse.altinity.com/cluster=cluster-1,clickhouse.altinity.com/shard=0" \
-     -o jsonpath='{.items[*].metadata.name}' \
-     )
+        -n "$NAMESPACE" \
+        -l "clickhouse.altinity.com/cluster=cluster-1,clickhouse.altinity.com/shard=0" \
+        -o jsonpath='{.items[*].metadata.name}' \
+    )
 )
 if [[ -z "$chi_pods" ]]; then
     echo "#  No pods found. Ensure the environment is up by running up.sh  #"
