@@ -7,10 +7,10 @@ source "$script_dir/env.sh"
 echo -e "\n### Retrieving a CHI pod from each replica ###"
 chi_pods=(
     $( kubectl get pods \
-     -n "$NAMESPACE" \
-     -l "clickhouse.altinity.com/cluster=cluster-1,clickhouse.altinity.com/shard=0" \
-     -o jsonpath='{.items[*].metadata.name}' \
-     )
+        -n "$NAMESPACE" \
+        -l "clickhouse.altinity.com/cluster=cluster-1,clickhouse.altinity.com/shard=0" \
+        -o jsonpath='{.items[*].metadata.name}' \
+    )
 )
 
 if [[ -z "$chi_pods" ]]; then
@@ -23,9 +23,9 @@ echo -e "\n### Creating replicated test table across replicas ###"
 cat "$LAB_ROOT/sql/00_create_test_replication_table.sql"
 for pod in "${chi_pods[@]}"; do
     kubectl exec -n "$NAMESPACE" -c "$CLICKHOUSE_CHI_CONTAINER" -i "$pod" -- \
-    clickhouse-client --user="$CLICKHOUSE_USER" --port="$CLICKHOUSE_TCP_PORT" \
-    --multiquery < "$LAB_ROOT/sql/00_create_test_replication_table.sql" \
-    --format=PrettyCompact
+        clickhouse-client --user="$CLICKHOUSE_USER" --port="$CLICKHOUSE_TCP_PORT" \
+        --multiquery < "$LAB_ROOT/sql/00_create_test_replication_table.sql" \
+        --format=PrettyCompact
 done
 
 echo -e "\n### Inserting into table on node ${chi_pods[0]} ###"
@@ -54,15 +54,15 @@ kubectl exec -n "$NAMESPACE" -c "$CLICKHOUSE_CHI_CONTAINER" -i "${chi_pods[0]}" 
 # Show Clickhouse Keeper CRD status using kubectl
 keeper_pods=(
     $( kubectl get pods \
-     -n "$NAMESPACE" \
-     -l "clickhouse-keeper.altinity.com/chk=clickhouse-keeper" \
-     -o jsonpath='{.items[*].metadata.name}' \
+        -n "$NAMESPACE" \
+        -l "clickhouse-keeper.altinity.com/chk=clickhouse-keeper" \
+        -o jsonpath='{.items[*].metadata.name}' \
     )
 )
 echo -e "\n### Listing pod status for all Clickhouse-Keeper pods ###"
 for pod in "${keeper_pods[@]}"; do
-  status=$(kubectl get pod -n "$NAMESPACE" "$pod" -o jsonpath='{.status.phase}')
-  printf '%s: %s\n' "$pod" "$status"
+    status=$(kubectl get pod -n "$NAMESPACE" "$pod" -o jsonpath='{.status.phase}')
+    printf '%s: %s\n' "$pod" "$status"
 done
 
 
@@ -77,8 +77,8 @@ for r in "${replicas[@]}"; do
     echo "#  Validating $r is active #"
     kubectl exec -n "$NAMESPACE" "$pod_name" -c "$CLICKHOUSE_KEEPER_CONTAINER" -- \
     sh -c "echo \"get \\\"/clickhouse/tables/cluster-1/events/replicas/$r/is_active\\\";\" \
-      | clickhouse-keeper-client --host 127.0.0.1 --port 2181 2>/dev/null" \
-      --format=PrettyCompact
+        | clickhouse-keeper-client --host 127.0.0.1 --port 2181 2>/dev/null" \
+        --format=PrettyCompact
 done
 
 # Query system.replicas to show each node contains the same replication metadata about default.test_replication and correctly connected with clickhouse-keeper
