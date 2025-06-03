@@ -23,20 +23,20 @@ echo -e "\n### Creating replicated test table across replicas ###"
 cat "$LAB_ROOT/sql/00_create_test_replication_table.sql"
 for pod in "${chi_pods[@]}"; do
     kubectl exec -n "$NAMESPACE" -c "$CLICKHOUSE_CHI_CONTAINER" -i "$pod" -- \
-    clickhouse-client --user="$CLICKHOUSE_USER" --port="$CLICKHOUSE_PORT" \
+    clickhouse-client --user="$CLICKHOUSE_USER" --port="$CLICKHOUSE_TCP_PORT" \
     --multiquery < "$LAB_ROOT/sql/00_create_test_replication_table.sql"
 done
 
 echo -e "\n### Inserting into table on node ${chi_pods[0]} ###"
 cat "$LAB_ROOT/sql/01_insert_into_one_node.sql"
 kubectl exec -n "$NAMESPACE" -c "$CLICKHOUSE_CHI_CONTAINER" -i "${chi_pods[0]}" -- \
-    clickhouse-client --user="$CLICKHOUSE_USER" --port="$CLICKHOUSE_PORT" \
+    clickhouse-client --user="$CLICKHOUSE_USER" --port="$CLICKHOUSE_TCP_PORT" \
     --multiquery < "$LAB_ROOT/sql/01_insert_into_one_node.sql"
 
 echo -e "\n### Querying table from ${chi_pods[1]} ###"
 cat "$LAB_ROOT/sql/02_query_from_other_node.sql" 
 kubectl exec -n "$NAMESPACE" -c "$CLICKHOUSE_CHI_CONTAINER" -i "${chi_pods[1]}" -- \
-    clickhouse-client --user="$CLICKHOUSE_USER" --port="$CLICKHOUSE_PORT" \
+    clickhouse-client --user="$CLICKHOUSE_USER" --port="$CLICKHOUSE_TCP_PORT" \
     --multiquery < "$LAB_ROOT/sql/02_query_from_other_node.sql" 
 
 # Query system.parts to show the insert was properly replicated across all nodes
@@ -44,7 +44,7 @@ kubectl exec -n "$NAMESPACE" -c "$CLICKHOUSE_CHI_CONTAINER" -i "${chi_pods[1]}" 
 echo -e '\n### Querying system.parts ###'
 cat "$LAB_ROOT/sql/03_query_system-parts.sql"
 kubectl exec -n "$NAMESPACE" -c "$CLICKHOUSE_CHI_CONTAINER" -i "${chi_pods[0]}" -- \
-    clickhouse-client --user="$CLICKHOUSE_USER" --port="$CLICKHOUSE_PORT" \
+    clickhouse-client --user="$CLICKHOUSE_USER" --port="$CLICKHOUSE_TCP_PORT" \
     --multiquery < "$LAB_ROOT/sql/03_query_system-parts.sql"
 
 # Show Clickhouse Keeper CRD status using kubectl
@@ -80,6 +80,6 @@ done
 echo -e '\n### Querying system.replicas for replication metadata ###'
 cat "$LAB_ROOT/sql/04_query_system-replicas.sql"
 kubectl exec -n "$NAMESPACE" -c "$CLICKHOUSE_CHI_CONTAINER" -i "${chi_pods[0]}" -- \
-    clickhouse-client --user="$CLICKHOUSE_USER" --port="$CLICKHOUSE_PORT" \
+    clickhouse-client --user="$CLICKHOUSE_USER" --port="$CLICKHOUSE_TCP_PORT" \
     --multiquery < "$LAB_ROOT/sql/04_query_system-replicas.sql" \
     | column -t -s $'\t'

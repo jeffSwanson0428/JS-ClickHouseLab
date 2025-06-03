@@ -9,7 +9,7 @@ if ! command -v envsubst &> /dev/null; then
     exit 1
 fi
 
-echo "### Creating namespaces: ###"
+echo -e "\n### Creating namespaces: ###"
 kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
 kubectl create namespace "prometheus" --dry-run=client -o yaml | kubectl apply -f -
 
@@ -22,8 +22,3 @@ kubectl apply -f $LAB_ROOT/manifests/keeper/clickhouse-keeper.yaml
 
 echo -e "\n### Creating Clickhouse Installation ###"
 kubectl apply -f $LAB_ROOT/manifests/chi/clickhouse-installation.yaml
-
-# Ideally I would use an IaC tool like pulumi to avoid this nonsense.
-echo "### Sleeping for 3 minutes to allow pods to come up (Sorry!) ###"
-sleep 180
-echo "### Clickhouse-Operator, Clickhouse-Keeper, and CHI pod deployments successful! ###"

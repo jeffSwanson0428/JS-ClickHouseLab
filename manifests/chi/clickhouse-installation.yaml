@@ -11,6 +11,13 @@ spec:
           containers:
             - name: clickhouse
               image: clickhouse/clickhouse-server:latest
+              resources:
+                requests:
+                  cpu: "500m"
+                  memory: "1Gi"
+                limits:
+                  cpu: "1"
+                  memory: "2Gi"
               ports:
                 - name: http
                   containerPort: 8123
@@ -23,6 +30,13 @@ spec:
                   mountPath: /var/lib/clickhouse
             - name: metrics-exporter
               image: altinity/metrics-exporter:latest
+              resources:
+                requests:
+                  cpu: "100m"
+                  memory: "100Mi"
+                limits:
+                  cpu: "250m"
+                  memory: "256Mi"
               ports:
                 - name: metrics
                   containerPort: 8888
