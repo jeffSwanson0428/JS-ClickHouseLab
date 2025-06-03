@@ -58,7 +58,7 @@ done
 
 
 
-# Create schema and ingest mock data
+# Create schema and ingest synthetic data
 echo -e "\n"
 echo "#########################################"
 echo "###   Create schema for logs table?   ###"
@@ -78,6 +78,29 @@ while true; do
             echo "### Please enter y or n. ###"
             ;;
     esac
+done
+
+# Execute required querys and evaluate their performance.
+echo "#########################################"
+echo "###    Execute queries against the    ###"
+echo "###        synthetic log data?        ###"
+echo "#########################################"
+while true; do
+  read -r -p "### Proceed with queries? [y/n]: " answer
+  case "$answer" in
+    [Yy]) 
+      echo "### Deploying infrastructure..."
+      bash "$LAB_ROOT/scripts/sh/query_performance.sh"
+      break
+      ;;
+    [Nn])
+      echo -e "### Skipping. ###\n"
+      break
+      ;;
+    *)
+      echo "### Please enter y or n. ###"
+      ;;
+  esac
 done
 
 echo -e "\n"
