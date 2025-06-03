@@ -22,7 +22,8 @@ cat "$LAB_ROOT/sql/05_create_replicateD_logs_table.sql"
 for pod in "${chi_pods[@]}"; do
     kubectl exec -n "$NAMESPACE" -c "$CLICKHOUSE_CHI_CONTAINER" -i "$pod" -- \
     clickhouse-client --user="$CLICKHOUSE_USER" --port="$CLICKHOUSE_TCP_PORT" \
-    --multiquery < "$LAB_ROOT/sql/05_create_replicateD_logs_table.sql"
+    --multiquery < "$LAB_ROOT/sql/05_create_replicateD_logs_table.sql" \
+    --format=PrettyCompact
 done
 
 echo -e "\n"
@@ -75,8 +76,9 @@ done
 echo -e "\n### Counting records stored on pods from each replica ###"
 cat "$LAB_ROOT/sql/06_count_logs_records.sql"
 for pod in "${chi_pods[@]}"; do
-    echo -n "$pod: total records = "
+    echo -e "$pod: total records = \n"
     kubectl exec -n "$NAMESPACE" -c "$CLICKHOUSE_CHI_CONTAINER" -i "$pod" -- \
     clickhouse-client --user="$CLICKHOUSE_USER" --port="$CLICKHOUSE_TCP_PORT" \
-    --multiquery < "$LAB_ROOT/sql/06_count_logs_records.sql"
+    --multiquery < "$LAB_ROOT/sql/06_count_logs_records.sql" \
+    --format=PrettyCompact
 done
