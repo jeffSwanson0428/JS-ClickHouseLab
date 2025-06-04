@@ -1,0 +1,588 @@
+#########################################
+###     Would you like to deploy      ###
+###  the kubernetes infrasctructure?  ###
+#########################################
+### Proceed with deployment? [y/n]: y
+### Deploying infrastructure...
+
+### Creating namespaces: ###
+namespace/clickhouse-lab created
+namespace/prometheus created
+
+### Creating Altinity Clickhouse Operator ###
+customresourcedefinition.apiextensions.k8s.io/clickhouseinstallations.clickhouse.altinity.com created
+customresourcedefinition.apiextensions.k8s.io/clickhouseinstallationtemplates.clickhouse.altinity.com created
+customresourcedefinition.apiextensions.k8s.io/clickhouseoperatorconfigurations.clickhouse.altinity.com created
+customresourcedefinition.apiextensions.k8s.io/clickhousekeeperinstallations.clickhouse-keeper.altinity.com created
+serviceaccount/clickhouse-operator created
+clusterrole.rbac.authorization.k8s.io/clickhouse-operator-clickhouse-lab created
+clusterrolebinding.rbac.authorization.k8s.io/clickhouse-operator-clickhouse-lab created
+configmap/etc-clickhouse-operator-files created
+configmap/etc-clickhouse-operator-confd-files created
+configmap/etc-clickhouse-operator-configd-files created
+configmap/etc-clickhouse-operator-templatesd-files created
+configmap/etc-clickhouse-operator-usersd-files created
+configmap/etc-keeper-operator-confd-files created
+configmap/etc-keeper-operator-configd-files created
+configmap/etc-keeper-operator-templatesd-files created
+configmap/etc-keeper-operator-usersd-files created
+secret/clickhouse-operator created
+deployment.apps/clickhouse-operator created
+service/clickhouse-operator-metrics created
+
+### Creating Clickhouse Keeper ###
+clickhousekeeperinstallation.clickhouse-keeper.altinity.com/clickhouse-keeper created
+
+### Creating Clickhouse Installation ###
+clickhouseinstallation.clickhouse.altinity.com/altinity-demo created
+### Sleeping for 3 minutes to allow pods to come up (Sorry!) ###
+
+#########################################
+###       Validate replication        ###
+###   and Clickhouse-Keeper health?   ###
+#########################################
+### Proceed with validation? [y/n]: y
+### Validating replication and keeper health. ###
+
+### Retrieving a CHI pod from each replica ###
+#  Found Pods: chi-altinity-demo-cluster-1-0-0-0 chi-altinity-demo-cluster-1-0-1-0 #
+
+### Creating replicated test table across replicas ###
+CREATE TABLE IF NOT EXISTS test_replication ON CLUSTER '{cluster}'
+(
+    event_id UInt64,
+    event_time DateTime
+)
+ENGINE = ReplicatedMergeTree(
+    '/clickhouse/tables/{cluster}/events',
+    '{replica}'
+)
+ORDER BY (event_id);
+   ┌─host────────────────────────────┬─port─┬─status─┬─error─┬─num_hosts_remaining─┬─num_hosts_active─┐
+1. │ chi-altinity-demo-cluster-1-1-1 │ 9000 │      0 │       │                   3 │                0 │
+2. │ chi-altinity-demo-cluster-1-1-0 │ 9000 │      0 │       │                   2 │                0 │
+3. │ chi-altinity-demo-cluster-1-0-0 │ 9000 │      0 │       │                   1 │                0 │
+4. │ chi-altinity-demo-cluster-1-0-1 │ 9000 │      0 │       │                   0 │                0 │
+   └─────────────────────────────────┴──────┴────────┴───────┴─────────────────────┴──────────────────┘
+   ┌─host────────────────────────────┬─port─┬─status─┬─error─┬─num_hosts_remaining─┬─num_hosts_active─┐
+1. │ chi-altinity-demo-cluster-1-1-1 │ 9000 │      0 │       │                   3 │                0 │
+2. │ chi-altinity-demo-cluster-1-1-0 │ 9000 │      0 │       │                   2 │                0 │
+3. │ chi-altinity-demo-cluster-1-0-0 │ 9000 │      0 │       │                   1 │                0 │
+4. │ chi-altinity-demo-cluster-1-0-1 │ 9000 │      0 │       │                   0 │                0 │
+   └─────────────────────────────────┴──────┴────────┴───────┴─────────────────────┴──────────────────┘
+
+### Inserting into table on node chi-altinity-demo-cluster-1-0-0-0 ###
+INSERT INTO test_replication (event_id, event_time)
+VALUES
+    (1, now()),
+    (2, '1995-04-28 12:34:56'),
+    (3, now())
+;
+
+### Querying table from chi-altinity-demo-cluster-1-0-1-0 ###
+SELECT * 
+FROM test_replication;
+   ┌─event_id─┬──────────event_time─┐
+1. │        1 │ 2025-06-04 01:25:51 │
+2. │        2 │ 1995-04-28 12:34:56 │
+3. │        3 │ 2025-06-04 01:25:51 │
+   └──────────┴─────────────────────┘
+
+### Querying system.parts ###
+SELECT
+    hostName()   AS replica_host,
+    name         AS part_name,
+    rows,
+    active
+FROM clusterAllReplicas('cluster-1', 'system', 'parts')
+WHERE
+    database = 'default'
+    AND table = 'test_replication'
+    AND active = 1
+ORDER BY
+    replica_host,
+    part_name;
+   ┌─replica_host──────────────────────┬─part_name─┬─rows─┬─active─┐
+1. │ chi-altinity-demo-cluster-1-0-0-0 │ all_0_0_0 │    3 │      1 │
+2. │ chi-altinity-demo-cluster-1-0-1-0 │ all_0_0_0 │    3 │      1 │
+3. │ chi-altinity-demo-cluster-1-1-0-0 │ all_0_0_0 │    3 │      1 │
+4. │ chi-altinity-demo-cluster-1-1-1-0 │ all_0_0_0 │    3 │      1 │
+   └───────────────────────────────────┴───────────┴──────┴────────┘
+
+### Listing pod status for all Clickhouse-Keeper pods ###
+chk-clickhouse-keeper-chk01-0-0-0: Running
+chk-clickhouse-keeper-chk01-0-1-0: Running
+chk-clickhouse-keeper-chk01-0-2-0: Running
+
+### Checking is_active for each replica on Clickhouse-Keeper ###
+#  Validating chi-altinity-demo-cluster-1-0-0 is active #
+UUID_'a5a469be-af98-4074-bc5e-cf42f0e08af5'
+
+#  Validating chi-altinity-demo-cluster-1-0-1 is active #
+UUID_'5aff6ffc-cd97-4ef4-af6d-1dc27cff1c56'
+
+#  Validating chi-altinity-demo-cluster-1-1-0 is active #
+UUID_'0e4f71d3-9688-4ce1-802f-fa0a1e10c5ca'
+
+#  Validating chi-altinity-demo-cluster-1-1-1 is active #
+UUID_'2e01acc8-b3c3-4fff-950e-ff2300276a47'
+
+
+### Querying system.replicas for replication metadata ###
+SELECT
+    hostName() AS replica_host,
+    database,
+    table,
+    engine,
+    zookeeper_name AS keeper_name,
+    replica_name,
+    replica_path,
+    total_replicas,
+    replica_is_active
+FROM clusterAllReplicas('cluster-1', 'system', 'replicas')
+WHERE database = 'default'
+  AND table = 'test_replication'
+ORDER BY replica_host;
+Row 1:
+──────
+replica_host:      chi-altinity-demo-cluster-1-0-0-0
+database:          default
+table:             test_replication
+engine:            ReplicatedMergeTree
+keeper_name:       default
+replica_name:      chi-altinity-demo-cluster-1-0-0
+replica_path:      /clickhouse/tables/cluster-1/events/replicas/chi-altinity-demo-cluster-1-0-0
+total_replicas:    4
+replica_is_active: {'chi-altinity-demo-cluster-1-0-0':1,'chi-altinity-demo-cluster-1-0-1':1,'chi-altinity-demo-cluster-1-1-0':1,'chi-altinity-demo-cluster-1-1-1':1}
+
+Row 2:
+──────
+replica_host:      chi-altinity-demo-cluster-1-0-1-0
+database:          default
+table:             test_replication
+engine:            ReplicatedMergeTree
+keeper_name:       default
+replica_name:      chi-altinity-demo-cluster-1-0-1
+replica_path:      /clickhouse/tables/cluster-1/events/replicas/chi-altinity-demo-cluster-1-0-1
+total_replicas:    4
+replica_is_active: {'chi-altinity-demo-cluster-1-0-0':1,'chi-altinity-demo-cluster-1-1-1':1,'chi-altinity-demo-cluster-1-1-0':1,'chi-altinity-demo-cluster-1-0-1':1}
+
+Row 3:
+──────
+replica_host:      chi-altinity-demo-cluster-1-1-0-0
+database:          default
+table:             test_replication
+engine:            ReplicatedMergeTree
+keeper_name:       default
+replica_name:      chi-altinity-demo-cluster-1-1-0
+replica_path:      /clickhouse/tables/cluster-1/events/replicas/chi-altinity-demo-cluster-1-1-0
+total_replicas:    4
+replica_is_active: {'chi-altinity-demo-cluster-1-0-0':1,'chi-altinity-demo-cluster-1-0-1':1,'chi-altinity-demo-cluster-1-1-0':1,'chi-altinity-demo-cluster-1-1-1':1}
+
+Row 4:
+──────
+replica_host:      chi-altinity-demo-cluster-1-1-1-0
+database:          default
+table:             test_replication
+engine:            ReplicatedMergeTree
+keeper_name:       default
+replica_name:      chi-altinity-demo-cluster-1-1-1
+replica_path:      /clickhouse/tables/cluster-1/events/replicas/chi-altinity-demo-cluster-1-1-1
+total_replicas:    4
+replica_is_active: {'chi-altinity-demo-cluster-1-0-0':1,'chi-altinity-demo-cluster-1-0-1':1,'chi-altinity-demo-cluster-1-1-0':1,'chi-altinity-demo-cluster-1-1-1':1}
+
+
+#########################################
+###   Create schema for logs table?   ###
+#########################################
+### Proceed with schema creation? [y/n]: y
+### Beginning Schema deployment and data ingestion ###
+
+### Creating replicated test table across both replicas ###
+CREATE TABLE IF NOT EXISTS logs ON CLUSTER '{cluster}'
+(
+  timestamp DateTime,
+  service_name String,
+  host String,
+  log_level String,
+  message String
+)
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/logs','{replica}')
+PARTITION BY toYYYYMM(timestamp)
+ORDER BY (service_name, timestamp);
+   ┌─host────────────────────────────┬─port─┬─status─┬─error─┬─num_hosts_remaining─┬─num_hosts_active─┐
+1. │ chi-altinity-demo-cluster-1-0-0 │ 9000 │      0 │       │                   3 │                0 │
+2. │ chi-altinity-demo-cluster-1-1-1 │ 9000 │      0 │       │                   2 │                0 │
+3. │ chi-altinity-demo-cluster-1-0-1 │ 9000 │      0 │       │                   1 │                0 │
+4. │ chi-altinity-demo-cluster-1-1-0 │ 9000 │      0 │       │                   0 │                0 │
+   └─────────────────────────────────┴──────┴────────┴───────┴─────────────────────┴──────────────────┘
+   ┌─host────────────────────────────┬─port─┬─status─┬─error─┬─num_hosts_remaining─┬─num_hosts_active─┐
+1. │ chi-altinity-demo-cluster-1-0-1 │ 9000 │      0 │       │                   3 │                0 │
+2. │ chi-altinity-demo-cluster-1-1-0 │ 9000 │      0 │       │                   2 │                0 │
+3. │ chi-altinity-demo-cluster-1-1-1 │ 9000 │      0 │       │                   1 │                0 │
+4. │ chi-altinity-demo-cluster-1-0-0 │ 9000 │      0 │       │                   0 │                0 │
+   └─────────────────────────────────┴──────┴────────┴───────┴─────────────────────┴──────────────────┘
+
+
+#########################################
+###     Ingest 1M Synthetic Logs?     ###
+#########################################
+### Proceed with ingestion? [y/n]: y
+### Port-forwarding the cluster CHI service http port ###
+
+### Inserting synthetic logs via Python script ###
+>>> Inserted batch 1 of 10
+>>> Inserted batch 2 of 10
+>>> Inserted batch 3 of 10
+>>> Inserted batch 4 of 10
+>>> Inserted batch 5 of 10
+>>> Inserted batch 6 of 10
+>>> Inserted batch 7 of 10
+>>> Inserted batch 8 of 10
+>>> Inserted batch 9 of 10
+>>> Inserted batch 10 of 10
+>>> All records inserted successfully.
+
+### Killing port-forward process ###
+/Users/jeffswanson/Documents/GitHub/JS-ClickHouseLab/scripts/sh/schema-and-ingestion.sh: line 35:  3711 Terminated: 15          kubectl port-forward -n clickhouse-lab svc/clickhouse-altinity-demo 8123:8123 > /dev/null 2>&1
+# Port-forward process (PID 3711) successfully terminated. #
+
+### Counting records stored on pods from each replica ###
+SELECT count(*) FROM logs;
+chi-altinity-demo-cluster-1-0-0-0: total records = 
+
+   ┌─count()─┐
+1. │ 1000000 │
+   └─────────┘
+chi-altinity-demo-cluster-1-0-1-0: total records = 
+
+   ┌─count()─┐
+1. │ 1000000 │
+   └─────────┘
+#########################################
+###    Execute queries against the    ###
+###        synthetic log data?        ###
+#########################################
+### Proceed with queries? [y/n]: y
+### Deploying infrastructure...
+
+### Retrieving a CHI pod from each replica ###
+
+### Querying error counts per service from chi-altinity-demo-cluster-1-0-1-0 ###
+SELECT
+    service_name AS service,
+    count() AS total_errors
+FROM
+    logs
+PREWHERE
+    log_level = 'Error'
+GROUP BY 
+    service_name
+;
+
+
+E0603 20:29:00.235998    3755 websocket.go:296] Unknown stream id 1, discarding message
+    ┌─service─────────────────┬─total_errors─┐
+ 1. │ billing                 │        18204 │
+ 2. │ identity                │        18057 │
+ 3. │ delivery-manager        │        18212 │
+ 4. │ auth-service            │        18001 │
+ 5. │ order_processor         │        18113 │
+ 6. │ analytics-engine        │        17995 │
+ 7. │ session_manager         │        18071 │
+ 8. │ cdn-edge-node           │        18523 │
+ 9. │ client-billing-database │        18071 │
+10. │ log-streaming-operator  │        18060 │
+11. │ log-streaming-manager   │        18115 │
+    └─────────────────────────┴──────────────┘
+
+### Querying traffic per host chi-altinity-demo-cluster-1-0-1-0 ###
+SELECT
+        host,
+        count()
+FROM
+        logs
+GROUP By
+        host
+;
+
+
+    ┌─host─────────────────────────────┬─count()─┐
+ 1. │ laptop-45.miller-black.com       │   32429 │
+ 2. │ email-94.orr-contreras.com       │   32150 │
+ 3. │ laptop-39.brown-nelson.net       │   32182 │
+ 4. │ desktop-69.gonzalez-kirk.org     │   32030 │
+ 5. │ db-39.ramirez-kennedy.com        │   32448 │
+ 6. │ desktop-77.johnson-gomez.com     │   32194 │
+ 7. │ desktop-63.jackson-patrick.info  │   32179 │
+ 8. │ email-89.baird-mercado.info      │   31991 │
+ 9. │ lt-63.rosales-meadows.info       │   32166 │
+10. │ laptop-74.jenkins-weber.com      │   32282 │
+11. │ email-83.carter-reyes.com        │   32569 │
+12. │ email-48.wagner-mcclain.com      │   32039 │
+13. │ srv-56.jackson-washington.com    │   32180 │
+14. │ desktop-46.cordova-hamilton.com  │   31957 │
+15. │ srv-31.cunningham-rodriguez.com  │   32289 │
+16. │ email-28.clark-watkins.com       │   32426 │
+17. │ srv-60.kennedy-andrews.com       │   32515 │
+18. │ laptop-85.turner-daniel.info     │   32406 │
+19. │ email-29.hill-little.info        │   32268 │
+20. │ laptop-63.pena-spencer.com       │   31984 │
+21. │ email-05.hernandez-anderson.com  │   32153 │
+22. │ srv-67.morris-edwards.com        │   32679 │
+23. │ web-32.harris-griffin.com        │   32434 │
+24. │ email-33.orozco-walters.com      │   32560 │
+25. │ desktop-71.thomas-anderson.info  │   32104 │
+26. │ lt-13.chavez-phillips.com        │   32075 │
+27. │ desktop-34.gonzalez-thompson.net │   32058 │
+28. │ lt-11.gallagher-palmer.com       │   32026 │
+29. │ desktop-51.turner-black.net      │   32490 │
+30. │ email-24.gonzalez-hawkins.com    │   32358 │
+31. │ laptop-33.gonzalez-cox.net       │   32379 │
+    └──────────────────────────────────┴─────────┘
+
+### Querying logs over time from chi-altinity-demo-cluster-1-0-1-0 ###
+#   Note: This query has a large output that has been surpressed to /dev/null #
+#   To view its output, check the /deliverables/ directory #
+SELECT
+    toStartOfHour(timestamp) AS date_to_hour,
+    count() AS logs_count
+FROM 
+        logs
+GROUP BY
+    date_to_hour
+ORDER BY
+    date_to_hour
+;
+
+
+### Enabling Query Logging ###
+
+### Running slow query with logging enabled on chi-altinity-demo-cluster-1-0-1-0 ###
+#   Note: This query has a large output that has been surpressed to /dev/null #
+#   To view its output, check the /deliverables/ directory #
+SELECT
+    host,
+    length(message),
+    lower(message),
+    lower(host),
+    reverse(toString(timestamp))
+FROM logs
+WHERE log_level != ''
+ORDER BY
+    lower(message),
+    lower(host),
+    toUnixTimestamp(timestamp)
+LIMIT 1000000
+;
+
+
+
+### Checking query_log for previous slow query on chi-altinity-demo-cluster-1-0-1-0 ###
+SELECT 
+    query_start_time,
+    query_duration_ms,
+    read_rows,
+    read_bytes,
+    memory_usage,
+    result_rows,
+    result_bytes,
+    query
+FROM
+    system.query_log
+WHERE 
+    type = 'QueryFinish'
+    AND query ILIKE '%length(message)%lower(message)%LIMIT 1000000%'
+ORDER BY
+    event_time DESC 
+LIMIT 1
+;
+
+
+
+# As we can see from the query_time, this is not the most snappy DML
+
+### Explain slow query on chi-altinity-demo-cluster-1-0-1-0 ###
+EXPLAIN SELECT
+    host,
+    length(message),
+    lower(message),
+    reverse(host),
+    toUnixTimestamp(timestamp)
+FROM logs
+WHERE log_level != ''
+ORDER BY
+    lower(message),
+    reverse(host),
+    toUnixTimestamp(timestamp)
+LIMIT 1000000
+;
+   ┌─explain────────────────────────────────────────────────────────────────────────┐
+1. │ Expression ((Project names + (Before ORDER BY + Projection) [lifted up part])) │
+2. │   Limit (preliminary LIMIT (without OFFSET))                                   │
+3. │     Sorting (Sorting for ORDER BY)                                             │
+4. │       Expression ((Before ORDER BY + Projection))                              │
+5. │         Expression                                                             │
+6. │           ReadFromMergeTree (default.logs)                                     │
+   └────────────────────────────────────────────────────────────────────────────────┘
+
+# Analysis: This query is slow for several deliberate reasons: 
+# - It is iterating over every row. The WHERE clause does not utilize any of the columns in the tables index. 
+# - This forces it to read every row at least once. Clickhouse in unable to prune any data based on its known partition. 
+# - It then executes several string functions across the columns in the select statement. 
+# - String functions must iterate of every byte within the data. 
+# - So for each row, the value stored in host, message, and timestamp must also be iterated over (sometimes multiple times). 
+# - Not only does this effect the CPU time, it also drastically increases the memory usage. 
+# - Lastly, the ORDER BY statement requires a sort across multiple fields that are different from the tables inherent ordering.
+# - This prevents clickhouse from using its pre-sorted data, and leads to slower sorting times. Likeny O(n log n) 
+
+# Suggested Changes: 
+# If we were to optimize for this query, we would need to make use of a materialized view. 
+# Creating a materialized view will prevent us from having to rewrite all of the ingested data. 
+# We could then create extra columns that account for the data that is modified by functions. 
+# lower(message) could then be inserted into a column named something like message_lower 
+# Likewise, reverse(host) can be inserted into the column rev_host 
+# This not only gives us the benefit of preprocessing the data outside of query runtime. 
+# We can also create a new ORDER BY to utilize these new columns to speed up sorting time 
+# ORDER BY (message_lower, rev_host) 
+
+
+#########################################
+### Simulate insertion during outage? ###
+#########################################
+### Proceed with simulation? [y/n]: y
+### Beginning simulation...
+
+### Retrieving pods for both CHI replicas ###
+#  Found Pods: chi-altinity-demo-cluster-1-0-0-0 chi-altinity-demo-cluster-1-0-1-0 #
+
+### Creating failure_sim table on each replica ###
+CREATE TABLE IF NOT EXISTS failure_sim ON CLUSTER '{cluster}'
+(
+    event_id UInt64,
+    event_time DateTime
+)
+ENGINE = ReplicatedMergeTree(
+    '/clickhouse/tables/{cluster}/failure_sim',
+    '{replica}'
+)
+ORDER BY (event_id);
+
+
+   ┌─host────────────────────────────┬─port─┬─status─┬─error─┬─num_hosts_remaining─┬─num_hosts_active─┐
+1. │ chi-altinity-demo-cluster-1-1-1 │ 9000 │      0 │       │                   3 │                0 │
+2. │ chi-altinity-demo-cluster-1-0-0 │ 9000 │      0 │       │                   2 │                0 │
+3. │ chi-altinity-demo-cluster-1-1-0 │ 9000 │      0 │       │                   1 │                0 │
+4. │ chi-altinity-demo-cluster-1-0-1 │ 9000 │      0 │       │                   0 │                0 │
+   └─────────────────────────────────┴──────┴────────┴───────┴─────────────────────┴──────────────────┘
+   ┌─host────────────────────────────┬─port─┬─status─┬─error─┬─num_hosts_remaining─┬─num_hosts_active─┐
+1. │ chi-altinity-demo-cluster-1-1-1 │ 9000 │      0 │       │                   3 │                0 │
+2. │ chi-altinity-demo-cluster-1-0-0 │ 9000 │      0 │       │                   2 │                0 │
+3. │ chi-altinity-demo-cluster-1-0-1 │ 9000 │      0 │       │                   1 │                0 │
+4. │ chi-altinity-demo-cluster-1-1-0 │ 9000 │      0 │       │                   0 │                0 │
+   └─────────────────────────────────┴──────┴────────┴───────┴─────────────────────┴──────────────────┘
+
+### Printing BEFORE state on each pod (row counts + replication status) ###
+# pod: chi-altinity-demo-cluster-1-0-0-0 (BEFORE) #
+   ┌─total_rows─┐
+1. │          0 │
+   └────────────┘
+   ┌─database─┬─table───────┬─is_leader─┬─total_replicas─┬─active_replicas─┬─replication_queue_size─┬─mutations_size─┐
+1. │ default  │ failure_sim │         1 │              4 │               4 │                      0 │              0 │
+   └──────────┴─────────────┴───────────┴────────────────┴─────────────────┴────────────────────────┴────────────────┘
+# pod: chi-altinity-demo-cluster-1-0-1-0 (BEFORE) #
+   ┌─total_rows─┐
+1. │          0 │
+   └────────────┘
+   ┌─database─┬─table───────┬─is_leader─┬─total_replicas─┬─active_replicas─┬─replication_queue_size─┬─mutations_size─┐
+1. │ default  │ failure_sim │         1 │              4 │               4 │                      0 │              0 │
+   └──────────┴─────────────┴───────────┴────────────────┴─────────────────┴────────────────────────┴────────────────┘
+
+### Deleting replica 1 pod: chi-altinity-demo-cluster-1-0-1-0 ###
+pod "chi-altinity-demo-cluster-1-0-1-0" deleted
+# Short wait for pod to terminate #
+
+### Inserting data into replica 0: chi-altinity-demo-cluster-1-0-0-0 ###
+
+### Waiting 30 seconds for operator to recreate pod ###
+
+### Printing AFTER state on each pod (row counts + replication status) ###
+# pod: chi-altinity-demo-cluster-1-0-0-0 (AFTER) #
+   ┌─total_rows─┐
+1. │         30 │
+   └────────────┘
+   ┌─database─┬─table───────┬─is_leader─┬─total_replicas─┬─active_replicas─┬─replication_queue_size─┬─mutations_size─┐
+1. │ default  │ failure_sim │         1 │              4 │               4 │                      0 │              0 │
+   └──────────┴─────────────┴───────────┴────────────────┴─────────────────┴────────────────────────┴────────────────┘
+# pod: chi-altinity-demo-cluster-1-0-1-0 (AFTER) #
+   ┌─total_rows─┐
+1. │         30 │
+   └────────────┘
+   ┌─database─┬─table───────┬─is_leader─┬─total_replicas─┬─active_replicas─┬─replication_queue_size─┬─mutations_size─┐
+1. │ default  │ failure_sim │         1 │              4 │               4 │                      0 │              0 │
+   └──────────┴─────────────┴───────────┴────────────────┴─────────────────┴────────────────────────┴────────────────┘
+
+### Finished Simulation! ###
+
+### Preparing cluster for next simulation ###
+# Dropping failure_sim and checking existence on each replica #
+# chi-altinity-demo-cluster-1-0-0-0 running reset script #
+   ┌─host────────────────────────────┬─port─┬─status─┬─error─┬─num_hosts_remaining─┬─num_hosts_active─┐
+1. │ chi-altinity-demo-cluster-1-1-1 │ 9000 │      0 │       │                   3 │                0 │
+2. │ chi-altinity-demo-cluster-1-1-0 │ 9000 │      0 │       │                   2 │                0 │
+3. │ chi-altinity-demo-cluster-1-0-0 │ 9000 │      0 │       │                   1 │                0 │
+4. │ chi-altinity-demo-cluster-1-0-1 │ 9000 │      0 │       │                   0 │                0 │
+   └─────────────────────────────────┴──────┴────────┴───────┴─────────────────────┴──────────────────┘
+   ┌─result─┐
+1. │      0 │
+   └────────┘
+# chi-altinity-demo-cluster-1-0-1-0 running reset script #
+   ┌─host────────────────────────────┬─port─┬─status─┬─error─┬─num_hosts_remaining─┬─num_hosts_active─┐
+1. │ chi-altinity-demo-cluster-1-1-0 │ 9000 │      0 │       │                   3 │                0 │
+2. │ chi-altinity-demo-cluster-1-1-1 │ 9000 │      0 │       │                   2 │                0 │
+3. │ chi-altinity-demo-cluster-1-0-1 │ 9000 │      0 │       │                   1 │                0 │
+4. │ chi-altinity-demo-cluster-1-0-0 │ 9000 │      0 │       │                   0 │                0 │
+   └─────────────────────────────────┴──────┴────────┴───────┴─────────────────────┴──────────────────┘
+   ┌─result─┐
+1. │      0 │
+   └────────┘
+
+### Reset complete. No failure_sim table should remain. ###
+
+
+#########################################
+###      The demo has concluded.      ###
+###      Thank you for viewing!       ###
+#########################################
+Destroy all Kubernetes objects? Press 'y' to continue: y
+### Deleting Clickhouse Installation ###
+clickhouseinstallation.clickhouse.altinity.com "altinity-demo" deleted
+### Deleting Clickhouse Keeper ###
+clickhousekeeperinstallation.clickhouse-keeper.altinity.com "clickhouse-keeper" deleted
+### Deleting Altinity Clickhouse Operator ###
+customresourcedefinition.apiextensions.k8s.io "clickhouseinstallations.clickhouse.altinity.com" deleted
+customresourcedefinition.apiextensions.k8s.io "clickhouseinstallationtemplates.clickhouse.altinity.com" deleted
+customresourcedefinition.apiextensions.k8s.io "clickhouseoperatorconfigurations.clickhouse.altinity.com" deleted
+customresourcedefinition.apiextensions.k8s.io "clickhousekeeperinstallations.clickhouse-keeper.altinity.com" deleted
+serviceaccount "clickhouse-operator" deleted
+clusterrole.rbac.authorization.k8s.io "clickhouse-operator-clickhouse-lab" deleted
+clusterrolebinding.rbac.authorization.k8s.io "clickhouse-operator-clickhouse-lab" deleted
+configmap "etc-clickhouse-operator-files" deleted
+configmap "etc-clickhouse-operator-confd-files" deleted
+configmap "etc-clickhouse-operator-configd-files" deleted
+configmap "etc-clickhouse-operator-templatesd-files" deleted
+configmap "etc-clickhouse-operator-usersd-files" deleted
+configmap "etc-keeper-operator-confd-files" deleted
+configmap "etc-keeper-operator-configd-files" deleted
+configmap "etc-keeper-operator-templatesd-files" deleted
+configmap "etc-keeper-operator-usersd-files" deleted
+secret "clickhouse-operator" deleted
+deployment.apps "clickhouse-operator" deleted
+service "clickhouse-operator-metrics" deleted
+### Deleting namespaces: ###
+##  Checking for namespace: 'prometheus' ##
+#   Deleting namespace: 'prometheus' #
+namespace "prometheus" deleted
+##  Checking for namespace: 'clickhouse-lab' ##
+#   Deleting namespace: 'clickhouse-lab' #
+namespace "clickhouse-lab" deleted
