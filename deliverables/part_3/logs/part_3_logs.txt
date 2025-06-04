@@ -1,0 +1,179 @@
+### Retrieving a CHI pod from each replica ###
+
+### Querying error counts per service from chi-altinity-demo-cluster-1-0-1-0 ###
+SELECT
+    service_name AS service,
+    count() AS total_errors
+FROM
+    logs
+PREWHERE
+    log_level = 'Error'
+GROUP BY 
+    service_name
+;
+
+
+E0603 20:29:00.235998    3755 websocket.go:296] Unknown stream id 1, discarding message
+    ┌─service─────────────────┬─total_errors─┐
+ 1. │ billing                 │        18204 │
+ 2. │ identity                │        18057 │
+ 3. │ delivery-manager        │        18212 │
+ 4. │ auth-service            │        18001 │
+ 5. │ order_processor         │        18113 │
+ 6. │ analytics-engine        │        17995 │
+ 7. │ session_manager         │        18071 │
+ 8. │ cdn-edge-node           │        18523 │
+ 9. │ client-billing-database │        18071 │
+10. │ log-streaming-operator  │        18060 │
+11. │ log-streaming-manager   │        18115 │
+    └─────────────────────────┴──────────────┘
+
+### Querying traffic per host chi-altinity-demo-cluster-1-0-1-0 ###
+SELECT
+        host,
+        count()
+FROM
+        logs
+GROUP By
+        host
+;
+
+
+    ┌─host─────────────────────────────┬─count()─┐
+ 1. │ laptop-45.miller-black.com       │   32429 │
+ 2. │ email-94.orr-contreras.com       │   32150 │
+ 3. │ laptop-39.brown-nelson.net       │   32182 │
+ 4. │ desktop-69.gonzalez-kirk.org     │   32030 │
+ 5. │ db-39.ramirez-kennedy.com        │   32448 │
+ 6. │ desktop-77.johnson-gomez.com     │   32194 │
+ 7. │ desktop-63.jackson-patrick.info  │   32179 │
+ 8. │ email-89.baird-mercado.info      │   31991 │
+ 9. │ lt-63.rosales-meadows.info       │   32166 │
+10. │ laptop-74.jenkins-weber.com      │   32282 │
+11. │ email-83.carter-reyes.com        │   32569 │
+12. │ email-48.wagner-mcclain.com      │   32039 │
+13. │ srv-56.jackson-washington.com    │   32180 │
+14. │ desktop-46.cordova-hamilton.com  │   31957 │
+15. │ srv-31.cunningham-rodriguez.com  │   32289 │
+16. │ email-28.clark-watkins.com       │   32426 │
+17. │ srv-60.kennedy-andrews.com       │   32515 │
+18. │ laptop-85.turner-daniel.info     │   32406 │
+19. │ email-29.hill-little.info        │   32268 │
+20. │ laptop-63.pena-spencer.com       │   31984 │
+21. │ email-05.hernandez-anderson.com  │   32153 │
+22. │ srv-67.morris-edwards.com        │   32679 │
+23. │ web-32.harris-griffin.com        │   32434 │
+24. │ email-33.orozco-walters.com      │   32560 │
+25. │ desktop-71.thomas-anderson.info  │   32104 │
+26. │ lt-13.chavez-phillips.com        │   32075 │
+27. │ desktop-34.gonzalez-thompson.net │   32058 │
+28. │ lt-11.gallagher-palmer.com       │   32026 │
+29. │ desktop-51.turner-black.net      │   32490 │
+30. │ email-24.gonzalez-hawkins.com    │   32358 │
+31. │ laptop-33.gonzalez-cox.net       │   32379 │
+    └──────────────────────────────────┴─────────┘
+
+### Querying logs over time from chi-altinity-demo-cluster-1-0-1-0 ###
+#   Note: This query has a large output that has been surpressed to /dev/null #
+#   To view its output, check the /deliverables/ directory #
+SELECT
+    toStartOfHour(timestamp) AS date_to_hour,
+    count() AS logs_count
+FROM 
+        logs
+GROUP BY
+    date_to_hour
+ORDER BY
+    date_to_hour
+;
+
+
+### Enabling Query Logging ###
+
+### Running slow query with logging enabled on chi-altinity-demo-cluster-1-0-1-0 ###
+#   Note: This query has a large output that has been surpressed to /dev/null #
+#   To view its output, check the /deliverables/ directory #
+SELECT
+    host,
+    length(message),
+    lower(message),
+    lower(host),
+    reverse(toString(timestamp))
+FROM logs
+WHERE log_level != ''
+ORDER BY
+    lower(message),
+    lower(host),
+    toUnixTimestamp(timestamp)
+LIMIT 1000000
+;
+
+
+
+### Checking query_log for previous slow query on chi-altinity-demo-cluster-1-0-1-0 ###
+SELECT 
+    query_start_time,
+    query_duration_ms,
+    read_rows,
+    read_bytes,
+    memory_usage,
+    result_rows,
+    result_bytes,
+    query
+FROM
+    system.query_log
+WHERE 
+    type = 'QueryFinish'
+    AND query ILIKE '%length(message)%lower(message)%LIMIT 1000000%'
+ORDER BY
+    event_time DESC 
+LIMIT 1
+;
+
+
+
+# As we can see from the query_time, this is not the most snappy DML
+
+### Explain slow query on chi-altinity-demo-cluster-1-0-1-0 ###
+EXPLAIN SELECT
+    host,
+    length(message),
+    lower(message),
+    reverse(host),
+    toUnixTimestamp(timestamp)
+FROM logs
+WHERE log_level != ''
+ORDER BY
+    lower(message),
+    reverse(host),
+    toUnixTimestamp(timestamp)
+LIMIT 1000000
+;
+   ┌─explain────────────────────────────────────────────────────────────────────────┐
+1. │ Expression ((Project names + (Before ORDER BY + Projection) [lifted up part])) │
+2. │   Limit (preliminary LIMIT (without OFFSET))                                   │
+3. │     Sorting (Sorting for ORDER BY)                                             │
+4. │       Expression ((Before ORDER BY + Projection))                              │
+5. │         Expression                                                             │
+6. │           ReadFromMergeTree (default.logs)                                     │
+   └────────────────────────────────────────────────────────────────────────────────┘
+
+# Analysis: This query is slow for several deliberate reasons: 
+# - It is iterating over every row. The WHERE clause does not utilize any of the columns in the tables index. 
+# - This forces it to read every row at least once. Clickhouse in unable to prune any data based on its known partition. 
+# - It then executes several string functions across the columns in the select statement. 
+# - String functions must iterate of every byte within the data. 
+# - So for each row, the value stored in host, message, and timestamp must also be iterated over (sometimes multiple times). 
+# - Not only does this effect the CPU time, it also drastically increases the memory usage. 
+# - Lastly, the ORDER BY statement requires a sort across multiple fields that are different from the tables inherent ordering.
+# - This prevents clickhouse from using its pre-sorted data, and leads to slower sorting times. Likeny O(n log n) 
+
+# Suggested Changes: 
+# If we were to optimize for this query, we would need to make use of a materialized view. 
+# Creating a materialized view will prevent us from having to rewrite all of the ingested data. 
+# We could then create extra columns that account for the data that is modified by functions. 
+# lower(message) could then be inserted into a column named something like message_lower 
+# Likewise, reverse(host) can be inserted into the column rev_host 
+# This not only gives us the benefit of preprocessing the data outside of query runtime. 
+# We can also create a new ORDER BY to utilize these new columns to speed up sorting time 
+# ORDER BY (message_lower, rev_host) 
